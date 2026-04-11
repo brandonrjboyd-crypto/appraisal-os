@@ -3,7 +3,21 @@ export default async function handler(req, res) {
 
   const { carrierText, phText, matter, carrierBase64, phBase64, carrierMediaType, phMediaType } = req.body;
 
-  const jsonFormat = `{
+  const instructions = `You are extracting and comparing two property damage repair estimates.
+
+Property: ${matter?.address || 'Unknown'}
+Claim: ${matter?.claimNo || 'Unknown'}
+
+INSTRUCTIONS:
+- Extract EVERY single line item from the carrier estimate with its exact dollar amount
+- Extract EVERY single line item from the policyholder estimate with its exact dollar amount
+- Try to match items that describe the same work and show them on the same row
+- For items that only appear in one estimate, show them with 0 for the other side
+- Do NOT skip any items - include all line items, overhead, profit, tax, subtotals
+- Use the exact description from the estimate, do not paraphrase
+
+Respond with JSON only - no explanation text before or after:
+{
   "lineItems": [
     {
       "description": "exact item description",
@@ -16,8 +30,8 @@ export default async function handler(req, res) {
   "carrierTotal": 0.00,
   "phTotal": 0.00,
   "totalGap": 0.00,
-  "topDisputes": ["item with largest gap 1", "item 2", "item 3"],
-  "assessment": "brief summary of key differences"
+  "topDisputes": ["largest gap items"],
+  "assessment": "brief summary"
 }`;
 
   let content;
@@ -25,63 +39,21 @@ export default async function handler(req, res) {
   if (carrierBase64 && phBase64) {
     content = [
       { type: 'document', source: { type: 'base64', media_type: carrierMediaType || 'application/pdf', data: carrierBase64 } },
-      { type: 'document', source: { type: 'base64', media_type: phMediaType || 'application/pdf', data: phBase64 } },
-      { type: 'text', text: `You are comparing two insurance repair estimates for property: ${matter?.address || 'Unknown'}, Claim: ${matter?.claimNo || 'Unknown'}.
-
-DOCUMENT 1 = CARRIER ESTIMATE (insurance company's estimate)
-DOCUMENT 2 = POLICYHOLDER ESTIMATE (contractor/public adjuster estimate)
-
-Step 1: Extract ALL line items from DOCUMENT 1 (carrier). List every line item with its dollar amount as "carrierAmount".
-Step 2: Extract ALL line items from DOCUMENT 2 (policyholder). List every line item with its dollar amount as "phAmount".
-Step 3: Match items that represent the same scope of work and put them on the same row.
-Step 4: Items that appear in only one estimate get 0.00 for the missing side.
-Step 5: Include overhead, profit, tax, and subtotals as separate line items.
-
-CRITICAL: Do NOT put carrier amounts in the phAmount field or vice versa.
-CRITICAL: Respond with JSON only — no text before or after the JSON.
-
-${jsonFormat}` }
+      { type: 'document', source: { type: 'base64', media_type: phBase64 ? phMediaType : carrierMediaType, data: phBase64 || carrierBase64 } },
+      { type: 'text', text: `First document is the CARRIER estimate. Second document is the POLICYHOLDER estimate.\n\n${instructions}` }
     ];
   } else if (carrierBase64 && !phBase64) {
     content = [
       { type: 'document', source: { type: 'base64', media_type: carrierMediaType || 'application/pdf', data: carrierBase64 } },
-      { type: 'text', text: `This PDF is the CARRIER estimate. Extract all line items from it and put the amounts in "carrierAmount".
-
-POLICYHOLDER ESTIMATE DATA (put these amounts in "phAmount"):
-${(phText || 'Not provided').substring(0, 6000)}
-
-Property: ${matter?.address || 'Unknown'}, Claim: ${matter?.claimNo || 'Unknown'}
-
-Match items where possible. Items only in one estimate get 0.00 for the other side.
-Respond with JSON only:
-${jsonFormat}` }
+      { type: 'text', text: `This document is the CARRIER estimate.\n\nPOLICYHOLDER ESTIMATE DATA:\n${(phText || 'Not provided').substring(0, 6000)}\n\n${instructions}` }
     ];
   } else if (!carrierBase64 && phBase64) {
     content = [
       { type: 'document', source: { type: 'base64', media_type: phMediaType || 'application/pdf', data: phBase64 } },
-      { type: 'text', text: `This PDF is the POLICYHOLDER estimate. Extract all line items and put amounts in "phAmount".
-
-CARRIER ESTIMATE DATA (put these amounts in "carrierAmount"):
-${(carrierText || 'Not provided').substring(0, 6000)}
-
-Property: ${matter?.address || 'Unknown'}, Claim: ${matter?.claimNo || 'Unknown'}
-
-Match items where possible. Items only in one estimate get 0.00 for the other side.
-Respond with JSON only:
-${jsonFormat}` }
+      { type: 'text', text: `This document is the POLICYHOLDER estimate.\n\nCARRIER ESTIMATE DATA:\n${(carrierText || 'Not provided').substring(0, 6000)}\n\n${instructions}` }
     ];
   } else {
-    content = `Compare these two property damage estimates.
-Property: ${matter?.address || 'Unknown'}, Claim: ${matter?.claimNo || 'Unknown'}
-
-CARRIER ESTIMATE (put amounts in carrierAmount):
-${(carrierText || 'Not provided').substring(0, 5000)}
-
-POLICYHOLDER ESTIMATE (put amounts in phAmount):
-${(phText || 'Not provided').substring(0, 5000)}
-
-Respond with JSON only:
-${jsonFormat}`;
+    content = `CARRIER ESTIMATE:\n${(carrierText || 'Not provided').substring(0, 5000)}\n\nPOLICYHOLDER ESTIMATE:\n${(phText || 'Not provided').substring(0, 5000)}\n\n${instructions}`;
   }
 
   let response;
