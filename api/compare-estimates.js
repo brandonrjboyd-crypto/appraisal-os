@@ -56,23 +56,32 @@ Respond with JSON only - no explanation text before or after:
     content = `CARRIER ESTIMATE:\n${(carrierText || 'Not provided').substring(0, 5000)}\n\nPOLICYHOLDER ESTIMATE:\n${(phText || 'Not provided').substring(0, 5000)}\n\n${instructions}`;
   }
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-      'anthropic-beta': 'pdfs-2024-09-25',
-      'content-type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 8000,
-      messages: [{ role: 'user', content }]
-    })
-  });
+  let response;
+  try {
+    response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'anthropic-beta': 'pdfs-2024-09-25',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-5',
+        max_tokens: 8000,
+        messages: [{ role: 'user', content }]
+      })
+    });
+  } catch(fetchErr) {
+    return res.status(500).json({ error: 'Fetch failed: ' + fetchErr.message });
+  }
 
   const data = await response.json();
-  if (!response.ok) return res.status(500).json({ error: data });
+  if (!response.ok) {
+    const msg = data?.error?.message || JSON.stringify(data);
+    console.error('Anthropic error:', msg);
+    return res.status(500).json({ error: msg });
+  }
 
   try {
     const raw = data.content[0].text;
